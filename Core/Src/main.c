@@ -101,8 +101,26 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t last_led_tick = 0;
   while (1)
   {
+    /* Toggle LEDs every 500ms (Non-blocking) */
+    if (HAL_GetTick() - last_led_tick >= 500)
+    {
+      HAL_GPIO_TogglePin(State_LED_GPIO_Port, State_LED_Pin);
+      HAL_GPIO_TogglePin(Switch_LED_GPIO_Port, Switch_LED_Pin);
+      last_led_tick = HAL_GetTick();
+    }
+
+    /* Buzzer turns ON when KEY1 button is pressed (Active-Low) */
+    if (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
+    {
+      HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
+    }
+    else
+    {
+      HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
