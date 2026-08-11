@@ -1,0 +1,29 @@
+# STM32CubeIDE / Eclipse Build Outputs
+Debug/
+Release/
+
+# Object files and dependencies
+*.o
+*.d
+*.su
+
+# Compiled binaries
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+
+# Local/User specific settings
+*.local
+.settings/
+
+# 야붐 공식 다운로드 자료 및 스크린샷 폴더 제외 (Git 관리 제외)
+YAHBOOM/
+img/
+3D Model File/
+Code/
+Hardware Info/
+RDK Code/
+Rules_File/
+extracted/
