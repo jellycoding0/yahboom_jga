@@ -25,7 +25,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "motor.h"
+#include "encoder.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -96,30 +98,55 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  Motor_Init();
+  Encoder_Init();
+  printf("System initialized. Press KEY1 to run motors!\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   uint32_t last_led_tick = 0;
+  uint32_t last_print_tick = 0;
   while (1)
   {
+    uint32_t current_time = HAL_GetTick();
+
     /* Toggle LEDs every 500ms (Non-blocking) */
-    if (HAL_GetTick() - last_led_tick >= 500)
+    if (current_time - last_led_tick >= 500)
     {
       HAL_GPIO_TogglePin(State_LED_GPIO_Port, State_LED_Pin);
       HAL_GPIO_TogglePin(Switch_LED_GPIO_Port, Switch_LED_Pin);
-      last_led_tick = HAL_GetTick();
+      last_led_tick = current_time;
     }
 
-    /* Buzzer turns ON when KEY1 button is pressed (Active-Low) */
+    /* Read and print encoder cumulative ticks every 200ms */
+    if (current_time - last_print_tick >= 200)
+    {
+      // Reading delta updates internal total ticks
+      Encoder_Get_Delta(ENCODER_LEFT);
+      Encoder_Get_Delta(ENCODER_RIGHT);
+
+      printf("Encoder L: %ld | R: %ld\r\n",
+             Encoder_Get_Total(ENCODER_LEFT),
+             Encoder_Get_Total(ENCODER_RIGHT));
+
+      last_print_tick = current_time;
+    }
+
+    /* Motor & Buzzer control via KEY1 button (Active-Low) */
     if (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
     {
       HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
+      // Left motor is 130RPM, Right motor is 500RPM.
+      // Increased base speed to overcome gearbox friction (deadband).
+      // Scaling Right motor speed down to 26% (1000 * 130/500 = 260) to balance wheel speeds.
+      Motor_Set_Speed(MOTOR_LEFT, 1000);  // Spin left motor forward (base - max)
+      Motor_Set_Speed(MOTOR_RIGHT, 260);  // Spin right motor forward (scaled)
     }
     else
     {
       HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
+      Motor_Stop();  // Stop both motors
     }
     /* USER CODE END WHILE */
 
@@ -168,7 +195,17 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+#ifdef __GNUC__
+#define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
 
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
 /* USER CODE END 4 */
 
 /**
