@@ -29,6 +29,7 @@
 #include "motor.h"
 #include "encoder.h"
 #include "icm20948.h"
+#include "robot_fsm.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -104,6 +105,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   Motor_Init();
   Encoder_Init();
+  Robot_FSM_Init();
   printf("Initializing IMU...\r\n");
   if (ICM20948_Init())
   {
@@ -115,25 +117,21 @@ int main(void)
     imu_ok = 0;
     printf("IMU initialization failed!\r\n");
   }
+  current_state = STATE_READY;
+  Robot_FSM_FeedWatchdog();
   printf("System initialized. Teleop ready!\r\n");
   HAL_UART_Receive_IT(&huart1, &rx_data, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint32_t last_led_tick = 0;
   uint32_t last_print_tick = 0;
   while (1)
   {
     uint32_t current_time = HAL_GetTick();
 
-    /* Toggle LEDs every 500ms (Non-blocking) */
-    if (current_time - last_led_tick >= 500)
-    {
-      HAL_GPIO_TogglePin(State_LED_GPIO_Port, State_LED_Pin);
-      HAL_GPIO_TogglePin(Switch_LED_GPIO_Port, Switch_LED_Pin);
-      last_led_tick = current_time;
-    }
+    /* FSM State Machine Handler */
+    Robot_FSM_Update();
 
     /* Read and print encoder cumulative ticks every 200ms */
     if (current_time - last_print_tick >= 200)
@@ -143,23 +141,14 @@ int main(void)
       Encoder_Get_Delta(ENCODER_RIGHT);
 
       int32_t gyro_z_scaled = (int32_t)(ICM20948_Get_GyroZ_rads() * 10000.0f);
-      printf("Encoder L: %ld | R: %ld | GyroZ: %ld | IMU: %d\r\n",
+      printf("Encoder L: %ld | R: %ld | GyroZ: %ld | IMU: %d | ST: %d\r\n",
              Encoder_Get_Total(ENCODER_LEFT),
              Encoder_Get_Total(ENCODER_RIGHT),
              gyro_z_scaled,
-             imu_ok);
+             imu_ok,
+             current_state);
 
       last_print_tick = current_time;
-    }
-
-    /* Buzzer control via KEY1 button (Active-Low) */
-    if (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
-    {
-      HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
-    }
-    else
-    {
-      HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
     }
     /* USER CODE END WHILE */
 
@@ -240,37 +229,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         // Parse packet, e.g. "F 400" or "S"
         if (sscanf((char*)rx_buffer, "%c %d", &cmd, &speed) >= 1)
         {
-          int16_t left_speed = 0;
-          int16_t right_speed = 0;
-
-          if (cmd == 'F') // Forward
-          {
-            left_speed = speed;
-            right_speed = (speed * 130) / 500; // Scaled down (500rpm -> 130rpm)
-          }
-          else if (cmd == 'B') // Backward
-          {
-            left_speed = -speed;
-            right_speed = -(speed * 130) / 500; // Scaled down
-          }
-          else if (cmd == 'L') // Spin Left
-          {
-            left_speed = -speed;
-            right_speed = (speed * 130) / 500; // Spin Left (Left reverse, Right forward)
-          }
-          else if (cmd == 'R') // Spin Right
-          {
-            left_speed = speed;
-            right_speed = -(speed * 130) / 500; // Spin Right (Left forward, Right reverse)
-          }
-          else if (cmd == 'S') // Stop
-          {
-            left_speed = 0;
-            right_speed = 0;
-          }
-
-          Motor_Set_Speed(MOTOR_LEFT, left_speed);
-          Motor_Set_Speed(MOTOR_RIGHT, right_speed);
+          Robot_FSM_Handle_Command(cmd, speed);
         }
         rx_index = 0; // Reset index
       }

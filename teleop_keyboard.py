@@ -39,6 +39,7 @@ last_v = 0.0
 last_w = 0.0
 last_gyro_z = 0.0
 imu_status = "CHECKING"  # Can be "OK", "FAILED", or "CHECKING"
+robot_state = "INIT"     # Robot FSM State (INIT/READY/RUN/EMERGENCY)
 
 # Serial port configuration
 def auto_detect_port():
@@ -106,28 +107,28 @@ def draw_dashboard(v_l, v_r, v, w, ticks_l, ticks_r, gyro_z):
         
     dashboard = ""
     dashboard += "\033[H"  # Move cursor to top-left
-    dashboard += "======================================================================\n"
-    dashboard += "             YAHBOOM 2WD ROBOT TELEOP & SENSOR FUSION DASHBOARD        \n"
-    dashboard += "======================================================================\n"
-    dashboard += " [Serial Port] : {:8} | [Status] : CONNECTED (IMU: {})\n".format(PORT, imu_display)
-    dashboard += " [Last Cmd]   : {:8} | [Base Speed] : {:4}\n".format(cmd_name, speed)
-    dashboard += "----------------------------------------------------------------------\n"
-    dashboard += "                             SENSOR FEEDBACK                          \n"
-    dashboard += "----------------------------------------------------------------------\n"
-    dashboard += " Left Encoder Ticks  : {:10} | Right Encoder Ticks : {:10}\n".format(ticks_l, ticks_r)
-    dashboard += " Left Wheel Velocity : {:8.3f} m/s | Right Wheel Velocity: {:8.3f} m/s\n".format(v_l, v_r)
-    dashboard += " IMU Gyro Z (YawRate): {:8.4f} rad/s\n".format(gyro_z)
-    dashboard += "----------------------------------------------------------------------\n"
-    dashboard += "                        SENSOR FUSION ODOMETRY DATA                   \n"
-    dashboard += "----------------------------------------------------------------------\n"
-    dashboard += " Robot Position X    : {:8.3f} m   | Robot Velocity v    : {:8.3f} m/s\n".format(x, v)
-    dashboard += " Robot Position Y    : {:8.3f} m   | Robot Velocity w    : {:8.3f} rad/s\n".format(y, w)
-    dashboard += " Robot Heading Theta : {:8.3f} deg | \n".format(theta_deg)
-    dashboard += "======================================================================\n"
-    dashboard += " * Calibration: Keep the robot STILL on boot to calibrate Gyro bias.   \n"
-    dashboard += " Controls: HOLD [w / a / s / d] to drive, RELEASE to stop              \n"
-    dashboard += "           Press [Space] for emergency stop, [q] to quit               \n"
-    dashboard += "======================================================================\n"
+    dashboard += "======================================================================\033[K\n"
+    dashboard += "             YAHBOOM 2WD ROBOT TELEOP & SENSOR FUSION DASHBOARD        \033[K\n"
+    dashboard += "======================================================================\033[K\n"
+    dashboard += " [Serial Port] : {:8} | [Status] : CONNECTED (IMU: {}) | [State] : {}\033[K\n".format(PORT, imu_display, robot_state)
+    dashboard += " [Last Cmd]   : {:8} | [Base Speed] : {:4}\033[K\n".format(cmd_name, speed)
+    dashboard += "----------------------------------------------------------------------\033[K\n"
+    dashboard += "                             SENSOR FEEDBACK                          \033[K\n"
+    dashboard += "----------------------------------------------------------------------\033[K\n"
+    dashboard += " Left Encoder Ticks  : {:10} | Right Encoder Ticks : {:10}\033[K\n".format(ticks_l, ticks_r)
+    dashboard += " Left Wheel Velocity : {:8.3f} m/s | Right Wheel Velocity: {:8.3f} m/s\033[K\n".format(v_l, v_r)
+    dashboard += " IMU Gyro Z (YawRate): {:8.4f} rad/s\033[K\n".format(gyro_z)
+    dashboard += "----------------------------------------------------------------------\033[K\n"
+    dashboard += "                        SENSOR FUSION ODOMETRY DATA                   \033[K\n"
+    dashboard += "----------------------------------------------------------------------\033[K\n"
+    dashboard += " Robot Position X    : {:8.3f} m   | Robot Velocity v    : {:8.3f} m/s\033[K\n".format(x, v)
+    dashboard += " Robot Position Y    : {:8.3f} m   | Robot Velocity w    : {:8.3f} rad/s\033[K\n".format(y, w)
+    dashboard += " Robot Heading Theta : {:8.3f} deg | \033[K\n".format(theta_deg)
+    dashboard += "======================================================================\033[K\n"
+    dashboard += " * Calibration: Keep the robot STILL on boot to calibrate Gyro bias.   \033[K\n"
+    dashboard += " Controls: HOLD [w / a / s / d] to drive, RELEASE to stop              \033[K\n"
+    dashboard += "           Press [Space] for emergency stop, [q] to quit               \033[K\n"
+    dashboard += "======================================================================\033[K\n"
     
     sys.stdout.write(dashboard)
     sys.stdout.flush()
@@ -248,7 +249,7 @@ draw_dashboard(0.0, 0.0, 0.0, 0.0, 0, 0, 0.0)
 
 # Start background thread to read serial print statements from the robot
 def read_serial():
-    global last_v_l, last_v_r, last_v, last_w, last_ticks_l, last_ticks_r, last_gyro_z, imu_status
+    global last_v_l, last_v_r, last_v, last_w, last_ticks_l, last_ticks_r, last_gyro_z, imu_status, robot_state
     while True:
         try:
             if ser.in_waiting:
@@ -256,20 +257,31 @@ def read_serial():
                 if line:
                     if "Encoder L:" in line and "GyroZ:" in line:
                         try:
-                            # Parse line: "Encoder L: -1694 | R: 3568 | GyroZ: -0.0150 | IMU: 1"
+                            # Parse line: "Encoder L: -1694 | R: 3568 | GyroZ: -0.0150 | IMU: 1 | ST: 1"
                             parts = line.split('|')
                             l_part = parts[0].split(':')[-1].strip()
                             r_part = parts[1].split(':')[-1].strip()
                             g_part = parts[2].split(':')[-1].strip()
                             i_part = parts[3].split(':')[-1].strip()
+                            st_part = parts[4].split(':')[-1].strip()
                             
                             ticks_l = int(l_part)
                             ticks_r = int(r_part)
                             gyro_z = float(g_part) / 10000.0
                             imu_ok = int(i_part)
+                            state_val = int(st_part)
                             
                             # Update IMU Connection Status
                             imu_status = "OK" if imu_ok == 1 else "FAILED"
+                            
+                            # Update Robot FSM State
+                            robot_state = {
+                                0: "INIT",
+                                1: "READY",
+                                2: "RUN",
+                                3: "EMERGENCY",
+                                4: "ERROR"
+                            }.get(state_val, "UNKNOWN")
                             
                             # Update kinematics and fusion calculations
                             v_l, v_r, v, w = update_odometry(ticks_l, ticks_r, gyro_z)
@@ -283,7 +295,7 @@ def read_serial():
                         except ValueError:
                             # Skip corrupted/incomplete lines
                             continue
-                    elif "Initializing" in line or "success" in line or "failed" in line or "WHO_AM_I" in line:
+                    elif "Initializing" in line or "success" in line or "failed" in line or "WHO_AM_I" in line or "Safety" in line or "EMERGENCY" in line:
                         # Move cursor to logging line (below dashboard) and print startup debug messages
                         sys.stdout.write("\033[20;1H[System Log]: {}\n\033[H".format(line))
                         sys.stdout.flush()
@@ -298,10 +310,18 @@ read_thread.start()
 listener = keyboard.Listener(on_press=on_press, on_release=on_release)
 listener.start()
 
-# Main thread loop: sleeps and remains interruptible by Ctrl+C
+# Main thread loop: feeds the STM32 watchdog periodically (every 200ms) and remains interruptible by Ctrl+C
 try:
     while listener.running:
-        time.sleep(0.1)
+        time.sleep(0.2)
+        # Periodically resend active motion command to feed the STM32 watchdog
+        with teleop_lock:
+            if pressed_keys and current_cmd in ['F', 'B', 'L', 'R']:
+                try:
+                    cmd_str = "{} {}\n".format(current_cmd, speed)
+                    ser.write(cmd_str.encode('utf-8'))
+                except:
+                    pass
 except KeyboardInterrupt:
     pass
 finally:
