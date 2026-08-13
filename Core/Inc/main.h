@@ -61,6 +61,8 @@ void Error_Handler(void);
 #define State_LED_GPIO_Port GPIOC
 #define Buzzer_Pin GPIO_PIN_5
 #define Buzzer_GPIO_Port GPIOC
+#define IMU_CS_Pin GPIO_PIN_12
+#define IMU_CS_GPIO_Port GPIOB
 #define Switch_LED_Pin GPIO_PIN_12
 #define Switch_LED_GPIO_Port GPIOA
 #define KEY1_Pin GPIO_PIN_2

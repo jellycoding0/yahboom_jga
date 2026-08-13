@@ -1,5 +1,11 @@
 # Yahboom ROS Robot Expansion Board (STM32F103RCT6) 2WD Platform
 
+
+powershell -ExecutionPolicy Bypass -File .\upload.ps1
+
+python teleop_keyboard.py
+
+
 이 프로젝트는 **야붐 ROS 로봇 확장 보드 (V3.0)**와 **JGA25-371 감속 모터**를 사용하여 2륜 차동 제어 모바일 로봇 하위 제어기(LLC)를 직접 개발하기 위한 개발 환경 및 소스 코드 저장소입니다.
 
 하드웨어 핀맵과 큐브MX 클럭/타이머 상세 가이드는 [PinMap.md](PinMap.md) 문서를 참고해 주세요.
@@ -47,3 +53,30 @@ powershell -ExecutionPolicy Bypass -File .\upload.ps1
 * **상대 경로 지원:** 수강생마다 프로젝트가 위치한 폴더 경로가 달라도 문제없이 `.elf` 파일을 자동 추적합니다.
 * **프로그래머 자동 탐색:** `C:\ST` 하위의 모든 STM32CubeIDE/STM32CubeCLT 설치 경로 및 `C:\Program Files`를 자동으로 뒤져 ST 공식 업로드 툴(`STM32_Programmer_CLI.exe`)을 알아서 찾아서 구동합니다.
 * **포트 자동 감지:** 활성화된 보드의 시리얼 COM 포트를 탐색하여 우선 매핑합니다.
+
+---
+
+## 4. PC 키보드 원격 조종 및 오도메트리 대시보드 (`teleop_keyboard.py`)
+
+PC 키보드로 로봇을 원격 조종하고, 실시간 바퀴 속도, 로봇 속도($v, w$), 누적 주행 위치 좌표($X, Y$), 방향각($\theta$)을 렌더링하는 터미널 CLI 대시보드를 제공합니다.
+
+### A. 조종을 위한 파이썬 환경 구축
+터미널에서 아래 명령을 실행하여 키보드 감지 및 시리얼 통신 라이브러리를 설치합니다.
+```powershell
+pip install pyserial pynput
+```
+
+### B. 조종 스크립트 실행
+1. 12V 배터리 전원 스위치를 켜고 USB 케이블로 PC와 연결합니다.
+2. 터미널에서 스크립트를 실행합니다 (시리얼 포트는 자동 감지됩니다).
+```powershell
+python teleop_keyboard.py
+```
+
+### C. 조작 키 가이드
+* **`w`**: 전진 (Hold 시 동작, Release 시 정지)
+* **`s`**: 후진 (Hold 시 동작, Release 시 정지)
+* **`a`**: 제자리 좌회전 (Spin Left)
+* **`d`**: 제자리 우회전 (Spin Right)
+* **`Space`**: 모터 비상 정지 (Emergency Stop)
+* **`q`** 또는 **`Ctrl + C`**: 모터 자동 제동 및 조종 프로그램 종료

@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "spi.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -27,6 +28,7 @@
 /* USER CODE BEGIN Includes */
 #include "motor.h"
 #include "encoder.h"
+#include "icm20948.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -48,7 +50,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint8_t rx_data = 0;
+uint8_t imu_ok = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,10 +100,23 @@ int main(void)
   MX_TIM8_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
   Motor_Init();
   Encoder_Init();
-  printf("System initialized. Press KEY1 to run motors!\r\n");
+  printf("Initializing IMU...\r\n");
+  if (ICM20948_Init())
+  {
+    imu_ok = 1;
+    printf("IMU initialization success!\r\n");
+  }
+  else
+  {
+    imu_ok = 0;
+    printf("IMU initialization failed!\r\n");
+  }
+  printf("System initialized. Teleop ready!\r\n");
+  HAL_UART_Receive_IT(&huart1, &rx_data, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -126,27 +142,24 @@ int main(void)
       Encoder_Get_Delta(ENCODER_LEFT);
       Encoder_Get_Delta(ENCODER_RIGHT);
 
-      printf("Encoder L: %ld | R: %ld\r\n",
+      int32_t gyro_z_scaled = (int32_t)(ICM20948_Get_GyroZ_rads() * 10000.0f);
+      printf("Encoder L: %ld | R: %ld | GyroZ: %ld | IMU: %d\r\n",
              Encoder_Get_Total(ENCODER_LEFT),
-             Encoder_Get_Total(ENCODER_RIGHT));
+             Encoder_Get_Total(ENCODER_RIGHT),
+             gyro_z_scaled,
+             imu_ok);
 
       last_print_tick = current_time;
     }
 
-    /* Motor & Buzzer control via KEY1 button (Active-Low) */
+    /* Buzzer control via KEY1 button (Active-Low) */
     if (HAL_GPIO_ReadPin(KEY1_GPIO_Port, KEY1_Pin) == GPIO_PIN_RESET)
     {
       HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_SET);
-      // Left motor is 130RPM, Right motor is 500RPM.
-      // Increased base speed to overcome gearbox friction (deadband).
-      // Scaling Right motor speed down to 26% (1000 * 130/500 = 260) to balance wheel speeds.
-      Motor_Set_Speed(MOTOR_LEFT, 1000);  // Spin left motor forward (base - max)
-      Motor_Set_Speed(MOTOR_RIGHT, 260);  // Spin right motor forward (scaled)
     }
     else
     {
       HAL_GPIO_WritePin(Buzzer_GPIO_Port, Buzzer_Pin, GPIO_PIN_RESET);
-      Motor_Stop();  // Stop both motors
     }
     /* USER CODE END WHILE */
 
@@ -205,6 +218,78 @@ PUTCHAR_PROTOTYPE
 {
   HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
   return ch;
+}
+
+#define RX_BUFFER_SIZE  32
+uint8_t rx_buffer[RX_BUFFER_SIZE];
+uint8_t rx_index = 0;
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart->Instance == USART1)
+  {
+    // If newline or carriage return is received, parse the command
+    if (rx_data == '\n' || rx_data == '\r')
+    {
+      if (rx_index > 0)
+      {
+        rx_buffer[rx_index] = '\0'; // Null-terminate string
+        
+        char cmd;
+        int speed = 0;
+        // Parse packet, e.g. "F 400" or "S"
+        if (sscanf((char*)rx_buffer, "%c %d", &cmd, &speed) >= 1)
+        {
+          int16_t left_speed = 0;
+          int16_t right_speed = 0;
+
+          if (cmd == 'F') // Forward
+          {
+            left_speed = speed;
+            right_speed = (speed * 130) / 500; // Scaled down (500rpm -> 130rpm)
+          }
+          else if (cmd == 'B') // Backward
+          {
+            left_speed = -speed;
+            right_speed = -(speed * 130) / 500; // Scaled down
+          }
+          else if (cmd == 'L') // Spin Left
+          {
+            left_speed = -speed;
+            right_speed = (speed * 130) / 500; // Spin Left (Left reverse, Right forward)
+          }
+          else if (cmd == 'R') // Spin Right
+          {
+            left_speed = speed;
+            right_speed = -(speed * 130) / 500; // Spin Right (Left forward, Right reverse)
+          }
+          else if (cmd == 'S') // Stop
+          {
+            left_speed = 0;
+            right_speed = 0;
+          }
+
+          Motor_Set_Speed(MOTOR_LEFT, left_speed);
+          Motor_Set_Speed(MOTOR_RIGHT, right_speed);
+        }
+        rx_index = 0; // Reset index
+      }
+    }
+    else
+    {
+      if (rx_index < RX_BUFFER_SIZE - 1)
+      {
+        rx_buffer[rx_index++] = rx_data;
+      }
+      else
+      {
+        rx_index = 0; // Buffer full, reset to prevent overflow
+      }
+    }
+    
+    // Re-enable UART Rx interrupt
+    HAL_UART_Receive_IT(&huart1, &rx_data, 1);
+  }
 }
 /* USER CODE END 4 */
 
